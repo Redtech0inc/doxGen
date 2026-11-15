@@ -105,7 +105,7 @@ e.g:
 and they can also have multiple types and even multiple variables that are returned by stacking:
 ```lua
 ---@return number temp this is the temperature calculated
----@return string|nil state this is the state of the matirale at that temp
+---@return string|nil state this is the state of the materiel at that temp
 ```
 
 ### @example
@@ -152,7 +152,7 @@ or
 local functions will not be documented as they are lua's private methods <br>
 also definitions via don't work
 ```lua
-vairable = function() end
+variable = function() end
 ```
 what does work is
 ```lua
