@@ -143,6 +143,16 @@ local function captureExplanation(tokens, methodTbl)
     methodTbl.exampleDesc[#methodTbl.exampleDesc+1] = table.concat(tokens," ",2)
 end
 
+local function captureSeeAlso(tokens, methodTbl)
+    local data = {}
+
+    data.file = tokens[2]
+    data.label = tokens[3]
+    data.desc = table.concat(tokens," ",4)
+
+    methodTbl.seeAlso[#methodTbl.seeAlso+1] = data
+end
+
 local function resetMethodTbl()
     local methodTbl = {
         def="",
@@ -150,7 +160,8 @@ local function resetMethodTbl()
         inputs = {},
         returns = {},
         exampleLines = {},
-        exampleDesc = {}
+        exampleDesc = {},
+        seeAlso = {}
     }
     return methodTbl
 end
@@ -159,6 +170,7 @@ local instructions = {}
 instructions["@param"] = captureParameter
 instructions["@return"] = captureReturn
 instructions["@explanation"] = captureExplanation
+instructions["@see"] = captureSeeAlso
 
 local function tokenizeFile(filePath)
     local docTokens = {}
@@ -275,6 +287,17 @@ local function generateDocs(filePath, backPath, parentFolderPath)
                     for j=1,#method.exampleDesc do
                         file:write(method.exampleDesc[j],"<br>\n")
                     end
+                end
+
+                file:write("\n")
+            end
+
+            if #method.seeAlso > 0 then
+                file:write("### See Also:\n")
+                local seeAlso
+                for j=1,#method.seeAlso do
+                    seeAlso = method.seeAlso[j]
+                    file:write("["..seeAlso.label.."]("..seeAlso.file.."): "..seeAlso.desc)
                 end
 
                 file:write("\n")
