@@ -72,6 +72,7 @@ go here<br>
 <li> '@return' adds an output value
 <li> '@example' adds an example line
 <li> '@explanation' adds an explanation below the example
+<li> '@warn' adds a warning line in red
 <li> '@see' adds a link to a file
 
 ### @param
@@ -129,6 +130,21 @@ this is kind of a sup chapter of example cause it only works with it
 e.g
 ```lua
 ---@explanation in the example we get a value from the user and process it in myFunc
+```
+
+### @warn
+with this you can warn people of certain behaviour of a method
+```lua
+---@warn <warning>
+```
+e.g:
+```lua
+---@warn returns a direct reference of all objects SO DO NOT MUTATE
+```
+and even
+```lua
+---@warn first warning
+---@warn second warning
 ```
 
 ### @see

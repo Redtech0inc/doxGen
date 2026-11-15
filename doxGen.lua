@@ -161,7 +161,8 @@ local function resetMethodTbl()
         returns = {},
         exampleLines = {},
         exampleDesc = {},
-        seeAlso = {}
+        seeAlso = {},
+        warnings = {}
     }
     return methodTbl
 end
@@ -171,6 +172,16 @@ instructions["@param"] = captureParameter
 instructions["@return"] = captureReturn
 instructions["@explanation"] = captureExplanation
 instructions["@see"] = captureSeeAlso
+
+local lineExpr = {
+}
+
+lineExpr["@example"] = function(line, methodTbl)
+    methodTbl.exampleLines[#methodTbl.exampleLines+1] = line:sub(13)
+end
+lineExpr["@warn"] = function(line, methodTbl)
+    methodTbl.warnings[#methodTbl.warnings+1] = line:sub(10)
+end
 
 local function tokenizeFile(filePath)
     local docTokens = {}
@@ -182,24 +193,29 @@ local function tokenizeFile(filePath)
 
         if instructions[tokens[1]] then
             instructions[tokens[1]](tokens, methodTbl)
-        elseif #tokens > 0 then --must be a description
-            if tokens[1] == "@example" then
-                methodTbl.exampleLines[#methodTbl.exampleLines+1] = line:sub(13) --code has to preserve original
+
+        elseif #tokens > 0 then --must preserve case
+
+            if lineExpr[tokens[1]] then
+                lineExpr[tokens[1]](line,methodTbl)
             else
                 methodTbl.desc[#methodTbl.desc+1] = line:sub(4) --use this to preserve written form
             end
+
         else
-            local name = line:match("function%s+([%w_%.:]+%b())")
-            if name and line:match("^%s*local%s") then --TODO: might add like a flag to allow locals in docs
-                --reset method desc tracking cause this isn't public
-                methodTbl = resetMethodTbl();
-            elseif name then
-                methodTbl.def = name
+            if #methodTbl.inputs > 0 or #methodTbl.returns > 0 or #methodTbl.desc > 0 then --only check if there is a active documentation
+                local name = line:match("function%s+([%w_%.:]+%b())")
+                if name and line:match("^%s*local%s") then --TODO: might add like a flag to allow locals in docs
+                    --reset method desc tracking cause this isn't public
+                    methodTbl = resetMethodTbl();
+                elseif name then
+                    methodTbl.def = name
 
-                docTokens[#docTokens+1] = methodTbl
+                    docTokens[#docTokens+1] = methodTbl
 
-                --reset method tracking
-                methodTbl = resetMethodTbl();
+                    --reset method tracking
+                    methodTbl = resetMethodTbl();
+                end
             end
         end
     end
@@ -207,8 +223,97 @@ local function tokenizeFile(filePath)
     return docTokens
 end
 
+local serializers = {
+    {
+        index = "desc",
+        func = function(file, method)
+            file:write("### Description:\n")
+            for j=1,#method.desc do
+                file:write(method.desc[j],"<br>\n")
+            end
+        end
+    },
+    {
+        index = "inputs",
+        func = function(file, method)
+            file:write("### Parameters:\n")
+            local input
+            for j=1,#method.inputs do
+                input = method.inputs[j]
+
+                file:write("<b>(")
+                if #input.types == 0 then
+                    file:write("any")
+                else
+                    file:write(table.concat(input.types,"|"))
+                end
+                file:write(")</b> "..input.name..": "..input.desc,"<br>\n")
+            end
+        end
+    },
+    {
+        index = "returns",
+        func = function(file, method)
+            file:write("### Returns:\n")
+            local returnData
+            for j=1,#method.returns do
+                returnData = method.returns[j]
+
+                file:write("<b>(")
+                if #returnData.types == 0 then
+                    file:write("any")
+                else
+                    file:write(table.concat(returnData.types,"|"))
+                end
+                file:write(")</b> "..returnData.name..": "..returnData.desc,"<br>\n")
+            end
+        end
+    },
+    {
+        index = "exampleLines",
+        func = function(file, method)
+            file:write("### Example:\n```lua\n")
+            for j=1,#method.exampleLines do
+                file:write(method.exampleLines[j],"\n")
+            end
+            file:write("```\n")
+
+            if #method.exampleDesc > 0 then
+                file:write("#### Explanation:\n")
+                for j=1,#method.exampleDesc do
+                    file:write(method.exampleDesc[j],"<br>\n")
+                end
+            end
+        end
+    },
+    {
+        index = "warnings",
+        func = function(file, method)
+            file:write("<p style=\"color:red;\">\n")
+            file:write("    <b>WARNINGS:</b><br>\n")
+            for j=1,#method.warnings do
+                file:write("    "..method.warnings[j],"<br>\n")
+            end
+            file:write("</p>")
+        end
+    },
+    {
+        index = "seeAlso",
+        func = function(file, method)
+            file:write("### See Also:\n")
+            local seeAlso
+            for j=1,#method.seeAlso do
+                seeAlso = method.seeAlso[j]
+                file:write("["..seeAlso.label.."]("..seeAlso.file.."): "..seeAlso.desc,"<br>\n")
+            end
+        end
+    }
+}
+
 local function generateDocs(filePath, backPath, parentFolderPath)
     local docTokens = tokenizeFile(filePath)
+
+    if #docTokens == 0 then return end --nothing to document
 
     local docName = fs.getName(filePath)
     local name = getCleanFileName(docName)
@@ -229,82 +334,23 @@ local function generateDocs(filePath, backPath, parentFolderPath)
     for i=1,#docTokens do
         method = docTokens[i]
 
-        if #method.inputs > 0 or #method.returns > 0 or #method.desc > 0 then
-            file:write("## "..method.def,"\n\n")
+        file:write("## "..method.def,"\n\n")
 
-            if #method.desc > 0 then
-                file:write("### Description:\n")
-                for j=1,#method.desc do
-                    file:write(method.desc[j],"<br>\n")
+        local serializer
+        for j=1,#serializers do
+            serializer = serializers[j]
+
+            if type(method[serializer.index]) == "table" then
+                if #method[serializer.index] > 0 then
+                    serializer.func(file, method)
+                    file:write("\n")
                 end
-                file:write("\n")
+            else
+                warn(serializer.index.." is not a sub table of a method token")
             end
-
-
-            if #method.inputs > 0 then
-                file:write("### Parameters:\n")
-                local input
-                for j=1,#method.inputs do
-                    input = method.inputs[j]
-
-                    file:write("<b>(")
-                    if #input.types == 0 then
-                        file:write("any")
-                    else
-                        file:write(table.concat(input.types,"|"))
-                    end
-                    file:write(")</b> "..input.name..": "..input.desc,"<br>\n")
-                end
-                file:write("\n")
-            end
-
-            if #method.returns > 0 then
-                file:write("### Returns:\n")
-                local returnData
-                for j=1,#method.returns do
-                    returnData = method.returns[j]
-
-                    file:write("<b>(")
-                    if #returnData.types == 0 then
-                        file:write("any")
-                    else
-                        file:write(table.concat(returnData.types,"|"))
-                    end
-                    file:write(")</b> "..returnData.name..": "..returnData.desc,"<br>\n")
-                end
-                file:write("\n")
-            end
-
-            if #method.exampleLines > 0 then
-                file:write("### Example:\n```lua\n")
-                for j=1,#method.exampleLines do
-                    file:write(method.exampleLines[j],"\n")
-                end
-                file:write("```\n")
-
-                if #method.exampleDesc > 0 then
-                    file:write("#### Explanation:\n")
-                    for j=1,#method.exampleDesc do
-                        file:write(method.exampleDesc[j],"<br>\n")
-                    end
-                end
-
-                file:write("\n")
-            end
-
-            if #method.seeAlso > 0 then
-                file:write("### See Also:\n")
-                local seeAlso
-                for j=1,#method.seeAlso do
-                    seeAlso = method.seeAlso[j]
-                    file:write("["..seeAlso.label.."]("..seeAlso.file.."): "..seeAlso.desc)
-                end
-
-                file:write("\n")
-            end
-
-            if i ~= #docTokens then file:write("\n") end
         end
+
+        if i ~= #docTokens then file:write("\n") end
     end
 
     file:close()
