@@ -20,6 +20,7 @@ example.lua:
 ---@explanation prints:
 ---@explanation examples
 ---@explanation go here
+---@see example example this links back to this file
 function someMethod(param1, param2, param3)
     --just imagine there is some code here that makes it work
     return aString, tableOrNumber
@@ -57,6 +58,9 @@ prints:<br>
 examples<br>
 go here<br>
 
+### See Also:
+[example](example): this links back to this file
+
 -------------------------------------------
 
 ## Annotations
@@ -68,6 +72,7 @@ go here<br>
 <li> '@return' adds an output value
 <li> '@example' adds an example line
 <li> '@explanation' adds an explanation below the example
+<li> '@see' adds a link to a file
 
 ### @param
 put
@@ -124,6 +129,22 @@ this is kind of a sup chapter of example cause it only works with it
 e.g
 ```lua
 ---@explanation in the example we get a value from the user and process it in myFunc
+```
+
+### @see
+with this you can link the dev to another file
+
+```lua
+---@see <destination> <label> <description>
+```
+
+e.g:
+```lua
+---@see example example this is a link to example.md
+```
+or
+```lua
+---@see ../random random this is a link to random.md which is in the previous directory
 ```
 
 ## important
