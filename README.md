@@ -129,7 +129,7 @@ e.g
 ## important
 
 local functions will not be documented as they are lua's private methods <br>
-also definitions via
+also definitions via don't work
 ```lua
 vairable = function() end
 ```
