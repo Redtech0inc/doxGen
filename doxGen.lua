@@ -173,8 +173,7 @@ instructions["@return"] = captureReturn
 instructions["@explanation"] = captureExplanation
 instructions["@see"] = captureSeeAlso
 
-local lineExpr = {
-}
+local lineExpr = {}
 
 lineExpr["@example"] = function(line, methodTbl)
     methodTbl.exampleLines[#methodTbl.exampleLines+1] = line:sub(13)
@@ -313,7 +312,7 @@ local serializers = {
 local function generateDocs(filePath, backPath, parentFolderPath)
     local docTokens = tokenizeFile(filePath)
 
-    if #docTokens == 0 then return end --nothing to document
+    if #docTokens == 0 then return false end --nothing to document
 
     local docName = fs.getName(filePath)
     local name = getCleanFileName(docName)
@@ -327,7 +326,7 @@ local function generateDocs(filePath, backPath, parentFolderPath)
 
     file:write("# "..name,"\n")
 
-    if backPath then file:write("[back]("..backPath..")\n") end
+    if backPath then file:write("back to ["..fs.getName(backPath)..".md]("..backPath..".md)\n") end
     file:write("\n")
 
     local method
@@ -352,29 +351,103 @@ local function generateDocs(filePath, backPath, parentFolderPath)
 
         if i ~= #docTokens then file:write("\n") end
     end
+    if backPath then file:write("---\nback to ["..fs.getName(backPath)..".md]("..backPath..".md)") end
+    file:close()
+
+    return true
+end
+
+local function generateSummaries(path, summary, backPath, head)
+    local outputFile = fs.combine(outputFolderPath, path..".md")
+
+    local file = io.open(outputFile,"w")
+
+    if not file then
+        warn("cannot open file handle for: "..outputFile)
+        return
+    end
+
+    file:write("# Package: "..head,"\n")
+
+    if #backPath > 0 then file:write("back to ["..backPath..".md]("..backPath..".md)\n") end
+
+    if #summary.folders > 0 then
+        file:write("## Packages\n")
+        for i=1,#summary.folders do
+            file:write("["..fs.getName(summary.folders[i])..".md]("..summary.folders[i]..".md)<br>\n")
+        end
+    end
+
+    if #summary.files > 0 then
+        file:write("\n")
+        file:write("## Files\n")
+        for i=1,#summary.files do
+            file:write("["..getCleanFileName(fs.getName(summary.files[i]))..".md]("..getCleanFileName(summary.files[i])..".md)<br>\n")
+        end
+    end
 
     file:close()
 end
 
-local function recursiveGenerating(path, parentFile, outputPath)
+local function stripFirstDir(path)
+    return path:match("^[^/]+/(.+)$") or path
+end
+
+local function getLastTwoDirs(path, layer)
+    if layer == 0 then return fs.getName(path) end
+    return path:match("([^/]+/[^/]+)$") or path
+end
+
+local function getCorrectBackPath(path, layer)
+    path = fs.getDir(getLastTwoDirs(path, layer))
+    if layer == 0 or layer == 1 then return path end
+    return "../"..path
+end
+
+local function recursiveGenerating(path, layer, outputPath)
+    local hasFiles = false
+
+    local summary = {
+        files = {},
+        folders = {}
+    }
+    local summaryPath = stripFirstDir(path)
+
     local fileList = fs.list(path)
+    local objPath, pathItem
     for i=1,#fileList do
-        if fs.isDir(fs.combine(path,fileList[i])) then
-            recursiveGenerating(fs.combine(path ,fileList[i]), nil, fs.combine(outputPath,fileList[i]))
+        objPath = fs.combine(path,fileList[i]);
+        pathItem = getLastTwoDirs(objPath, layer)
+
+        if fs.isDir(objPath) then
+            if recursiveGenerating(objPath, layer+1, fs.combine(outputPath,fileList[i])) then
+                summary.folders[#summary.folders+1] = pathItem
+                hasFiles = true
+            end
         else
-            generateDocs(fs.combine(path ,fileList[i]), parentFile, outputPath)
+            if generateDocs(objPath, getCorrectBackPath(objPath, layer+1), outputPath) then
+                summary.files[#summary.files+1] = pathItem
+                hasFiles = true
+            end
         end
     end
+
+    if hasFiles then
+        generateSummaries(summaryPath, summary, getCorrectBackPath(path, layer), outputPath:sub(#docsFolderPath+2))
+    end
+    return hasFiles
 end
 
 fs.delete(outputFolderPath)
 
 if fs.isDir(filePath) then
-    recursiveGenerating(filePath, nil, outputFolderPath)
+    recursiveGenerating(filePath, 0, outputFolderPath)
 else--file
     generateDocs(filePath, nil, outputFolderPath)
 end
 
+--print(textutils.serialise(packageSummaries))
+
 term.setTextColor(colors.gray)
-print("generated documentation in '"..outputFolderPath.."'")
+print("generated documentation in '"..outputFolderPath.."/'")
 term.setTextColor(colors.white)
