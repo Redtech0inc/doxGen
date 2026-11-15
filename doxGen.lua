@@ -357,7 +357,7 @@ local function generateDocs(filePath, backPath, parentFolderPath)
     return true
 end
 
-local function generateSummaries(path, summary, backPath, head)
+local function generateSummary(path, summary, backPath, head)
     local outputFile = fs.combine(outputFolderPath, path..".md")
 
     local file = io.open(outputFile,"w")
@@ -433,7 +433,7 @@ local function recursiveGenerating(path, layer, outputPath)
     end
 
     if hasFiles then
-        generateSummaries(summaryPath, summary, getCorrectBackPath(path, layer), outputPath:sub(#docsFolderPath+2))
+        generateSummary(summaryPath, summary, getCorrectBackPath(path, layer), outputPath:sub(#docsFolderPath+2))
     end
     return hasFiles
 end
