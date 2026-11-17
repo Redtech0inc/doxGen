@@ -25,15 +25,134 @@ local function warn(msg)
     term.setTextColor(color)
 end
 
+local getSimpleJSONStyleMap = function(_,_)end --* placeholder for VSCode syntax detection
+
+local function jsonStyleToString(value, indents)
+    if type(value) == "nil" then return "null"
+    elseif type(value) == "number" or type(value) == "boolean" then return tostring(value)
+    elseif type(value) == "table" then return getSimpleJSONStyleMap(value, indents)
+    end
+    return "\""..(tostring(value):gsub("\"","")).."\""
+end
+
+function getSimpleJSONStyleMap(map, indents)
+    local output = "{\n"
+    local firstItr = true
+    local indentStr = ("    "):rep(indents)
+    for k,v in pairs(map) do
+        if firstItr then
+            output = output..indentStr.."\""..tostring(k).."\": "..jsonStyleToString(v, indents+1)
+        else
+            output = output..",\n"..indentStr.."\""..tostring(k).."\": "..jsonStyleToString(v, indents+1)
+        end
+        firstItr = false
+    end
+    if indents > 1 then return output.."\n"..("    "):rep(indents-1).."}" end
+    return output.."\n}"
+end
+
 local function getPathString(path)
     if #path == 0 or path == "/" then return "root" end
     return path
 end
 
-local function getCleanFileName(fileName)
+local function getFileNameNoExtension(fileName)
     local output = fileName:match("(.+)%.[^%.]+$")
 
     if not output then return fileName end
+    return output
+end
+
+local function makeSettings()
+    local genSettings = {}
+
+    genSettings.misc={}
+    genSettings.misc.typeSep = "|"
+    genSettings.misc.summaryPathDiv = "/"
+    genSettings.misc.warnParagraph = "style=\"color:red;\""
+    
+    genSettings.formatting={}
+    genSettings.formatting.inputs = "<b>({types})</b> {name}: {desc}"
+    genSettings.formatting.returns = "<b>({types})</b> {name}: {desc}"
+    genSettings.formatting.seeAlso = "[{label}]({file}): {desc}"
+
+    genSettings.flags = {}
+    genSettings.flags.docLocals = false
+
+    return genSettings
+end
+
+local function validateSettings(settings,settingsPath)
+    local expectation = makeSettings()
+
+    local function recursiveFiltering(setSubTbl, expSubTbl)
+        if type(setSubTbl) ~= "table" then
+            setSubTbl = expSubTbl
+            return true, true, expSubTbl
+        end
+
+        local wasChanged = false
+        for k,v in pairs(expSubTbl) do
+            if type(v) == "table" then
+                local internalChange, shouldReplace, newSettings = recursiveFiltering(setSubTbl[k], v)
+                if shouldReplace then
+                    setSubTbl[k] = newSettings
+                end
+
+                if internalChange then wasChanged = true end
+            elseif type(v) ~= type(setSubTbl[k]) then
+                setSubTbl[k] = v
+                wasChanged = true
+            end
+        end
+        return wasChanged
+    end
+
+    local rewriteFile = recursiveFiltering(settings,expectation) --don't need extra logic here cause load settings ensures that settings is a table
+    if rewriteFile then
+        local file = io.open(settingsPath,"w")
+        if not file then
+            warn("cannot update settings file ("..settingsPath..")")
+            return settings
+        end
+
+        file:write(getSimpleJSONStyleMap(settings,1))
+        file:close()
+    end
+    return settings
+end
+
+local function loadSettings(mountPath)
+    local output
+
+    local settingsPath = fs.combine(mountPath,"genSettings.json")
+    if not fs.exists(settingsPath) then
+        output = makeSettings()
+
+        local file = io.open(settingsPath,"w")
+        if not file then
+            warn("cannot create settings file ("..settingsPath..")")
+            return output
+        end
+
+        file:write(getSimpleJSONStyleMap(output,1))
+        file:close()
+    else
+        local file = io.open(settingsPath,"r")
+        if not file then
+            warn("cannot read settings file ("..settingsPath..")")
+            return output
+        end
+
+        output = textutils.unserialiseJSON(file:read("a"))
+
+        file:close()
+
+        if type(output) == "table" then return validateSettings(output, settingsPath)
+        else output = makeSettings()
+        end
+    end
+
     return output
 end
 
@@ -41,8 +160,12 @@ local mountPath = fs.getDir(shell.getRunningProgram())
 if mountPath == "rom/" then mountPath = "" end
 
 local docsFolderPath = fs.combine(mountPath,"docs")
+local logsFolderPath = fs.combine(mountPath,"logs")
 
 setupFolder(docsFolderPath)
+setupFolder(logsFolderPath)
+
+local genSettings = loadSettings(mountPath)
 
 print()
 term.setTextColor(colors.blue)
@@ -54,8 +177,7 @@ local filePath = arrowRead("> ",colors.lightGray)
 if not fs.exists(filePath) or filePath == "" then error("cannot use '"..getPathString(filePath).."' as input either doesn't exist or is protected")
 end
 
-local outputFolderPath = fs.combine(docsFolderPath,getCleanFileName(fs.getName(filePath)))
-
+local outputFolderPath = fs.combine(docsFolderPath,getFileNameNoExtension(fs.getName(filePath)))
 
 --[[
 format:
@@ -204,7 +326,7 @@ local function tokenizeFile(filePath)
         else
             if #methodTbl.inputs > 0 or #methodTbl.returns > 0 or #methodTbl.desc > 0 then --only check if there is a active documentation
                 local name = line:match("function%s+([%w_%.:]+%b())")
-                if name and line:match("^%s*local%s") then --TODO: might add like a flag to allow locals in docs
+                if not genSettings.flags.docLocals and name and line:match("^%s*local%s") then
                     --reset method desc tracking cause this isn't public
                     methodTbl = resetMethodTbl();
                 elseif name then
@@ -220,6 +342,21 @@ local function tokenizeFile(filePath)
     end
 
     return docTokens
+end
+
+local function formatString(format, valueTbl)
+    return format:gsub("{([^}]+)}", function(tag)
+        return tostring(valueTbl[tag] or "")
+    end)
+end
+
+local function getTypesStr(types)
+    if type(types) ~= "table" then types = {} end
+    if #types == 0 then
+        return "any"
+    else
+        return table.concat(types,genSettings.misc.typeSep)
+    end
 end
 
 local serializers = {
@@ -240,13 +377,17 @@ local serializers = {
             for j=1,#method.inputs do
                 input = method.inputs[j]
 
-                file:write("<b>(")
-                if #input.types == 0 then
-                    file:write("any")
-                else
-                    file:write(table.concat(input.types,"|"))
-                end
-                file:write(")</b> "..input.name..": "..input.desc,"<br>\n")
+                file:write(
+                    formatString(
+                        genSettings.formatting.inputs,
+                        {
+                            name = input.name,
+                            desc = input.desc,
+                            types = getTypesStr(input.types)
+                        }
+                    )
+                    ,"<br>\n"
+                )
             end
         end
     },
@@ -258,13 +399,17 @@ local serializers = {
             for j=1,#method.returns do
                 returnData = method.returns[j]
 
-                file:write("<b>(")
-                if #returnData.types == 0 then
-                    file:write("any")
-                else
-                    file:write(table.concat(returnData.types,"|"))
-                end
-                file:write(")</b> "..returnData.name..": "..returnData.desc,"<br>\n")
+                file:write(
+                    formatString(
+                        genSettings.formatting.returns,
+                        {
+                            name = returnData.name,
+                            desc = returnData.desc,
+                            types = getTypesStr(returnData.types)
+                        }
+                    ),
+                    "<br>\n"
+                )
             end
         end
     },
@@ -288,12 +433,12 @@ local serializers = {
     {
         index = "warnings",
         func = function(file, method)
-            file:write("<p style=\"color:red;\">\n")
+            file:write("<p "..genSettings.misc.warnParagraph..">\n")
             file:write("    <b>WARNINGS:</b><br>\n")
             for j=1,#method.warnings do
                 file:write("    "..method.warnings[j],"<br>\n")
             end
-            file:write("</p>")
+            file:write("</p>\n")
         end
     },
     {
@@ -303,30 +448,31 @@ local serializers = {
             local seeAlso
             for j=1,#method.seeAlso do
                 seeAlso = method.seeAlso[j]
-                file:write("["..seeAlso.label.."]("..seeAlso.file.."): "..seeAlso.desc,"<br>\n")
+                file:write(
+                    formatString(
+                        genSettings.formatting.seeAlso,
+                        seeAlso
+                    )
+                    ,"<br>\n"
+                )
             end
         end
     }
 }
 
-local function generateDocs(filePath, backPath, parentFolderPath)
-    local docTokens = tokenizeFile(filePath)
+local function generateDocs(docTokens, name, backPath, parentOutputPath)
+    local outputPath = fs.combine(parentOutputPath,name..".md")
 
-    if #docTokens == 0 then return false end --nothing to document
-
-    local docName = fs.getName(filePath)
-    local name = getCleanFileName(docName)
-
-    local file = io.open(fs.combine(parentFolderPath,name..".md"),"w")
+    local file = io.open(outputPath,"w")
 
     if not file then
-        warn("cannot generate docs for "..docName.." file handle won't open")
+        warn("cannot generate docs for "..outputPath.." file handle won't open")
         return;
     end
 
     file:write("# "..name,"\n")
 
-    if backPath then file:write("back to ["..fs.getName(backPath)..".md]("..backPath..".md)\n") end
+    if backPath then file:write("back to package ["..fs.getName(backPath).."]("..backPath..".md)\n") end
     file:write("\n")
 
     local method
@@ -351,103 +497,231 @@ local function generateDocs(filePath, backPath, parentFolderPath)
 
         if i ~= #docTokens then file:write("\n") end
     end
-    if backPath then file:write("---\nback to ["..fs.getName(backPath)..".md]("..backPath..".md)") end
+    if backPath then file:write("---\nback to package ["..fs.getName(backPath).."]("..backPath..".md)") end
     file:close()
+end
 
+local logger
+
+--[[
+    hasFiles = false/true
+    files ={
+        {   
+            path = "just the file name with extension"
+            tokens=nil
+        },
+        ...
+    },
+    folders = {
+        {
+            hasFiles = false/true
+            files ={
+                {
+                    path="just the file name with extension"
+                    tokens=nil
+                },
+                ...
+            },
+            folders ={
+                ...
+            }
+        }
+    }
+]]
+local docTree = {
+    path = getFileNameNoExtension(fs.getName(filePath)),
+    hasFiles = false,
+    files={},
+    folders={}
+}
+
+local function insertFolder(path,currentSubTable)
+    currentSubTable.folders[#currentSubTable.folders+1]={
+        path = path,
+        hasFiles = false,
+        files={},
+        folders={}
+    }
+    return #currentSubTable.folders
+end
+
+local function insertFile(file,tokens,currentSubTable)
+    if #tokens == 0 then return false end
+    currentSubTable.hasFiles = true
+    currentSubTable.files[#currentSubTable.files+1]={
+        path=file,
+        tokens = tokens
+    }
     return true
 end
 
-local function generateSummary(path, summary, backPath, head)
-    local outputFile = fs.combine(outputFolderPath, path..".md")
-
-    local file = io.open(outputFile,"w")
-
-    if not file then
-        warn("cannot open file handle for: "..outputFile)
-        return
-    end
-
-    file:write("# Package: "..head,"\n")
-
-    if #backPath > 0 then file:write("back to ["..backPath..".md]("..backPath..".md)\n") end
-
-    if #summary.folders > 0 then
-        file:write("## Packages\n")
-        for i=1,#summary.folders do
-            file:write("["..fs.getName(summary.folders[i])..".md]("..summary.folders[i]..".md)<br>\n")
-        end
-    end
-
-    if #summary.files > 0 then
-        file:write("\n")
-        file:write("## Files\n")
-        for i=1,#summary.files do
-            file:write("["..getCleanFileName(fs.getName(summary.files[i]))..".md]("..getCleanFileName(summary.files[i])..".md)<br>\n")
-        end
-    end
-
-    file:close()
-end
-
-local function stripFirstDir(path)
-    return path:match("^[^/]+/(.+)$") or path
-end
-
-local function getLastTwoDirs(path, layer)
-    if layer == 0 then return fs.getName(path) end
-    return path:match("([^/]+/[^/]+)$") or path
-end
-
-local function getCorrectBackPath(path, layer)
-    path = fs.getDir(getLastTwoDirs(path, layer))
-    if layer == 0 or layer == 1 then return path end
-    return "../"..path
-end
-
-local function recursiveGenerating(path, layer, outputPath)
-    local hasFiles = false
-
-    local summary = {
-        files = {},
-        folders = {}
-    }
-    local summaryPath = stripFirstDir(path)
-
+local function scanFiles(path,currentSubTable)
     local fileList = fs.list(path)
-    local objPath, pathItem
-    for i=1,#fileList do
-        objPath = fs.combine(path,fileList[i]);
-        pathItem = getLastTwoDirs(objPath, layer)
 
-        if fs.isDir(objPath) then
-            if recursiveGenerating(objPath, layer+1, fs.combine(outputPath,fileList[i])) then
-                summary.folders[#summary.folders+1] = pathItem
+    local hasFiles = false
+    local itemPath
+    for i=1,#fileList do
+        itemPath = fs.combine(path,fileList[i])
+
+        if fs.isDir(itemPath) then
+            local index = insertFolder(fileList[i],currentSubTable)
+            if scanFiles(itemPath, currentSubTable.folders[index]) then
+                currentSubTable.hasFiles = true
                 hasFiles = true
             end
         else
-            if generateDocs(objPath, getCorrectBackPath(objPath, layer+1), outputPath) then
-                summary.files[#summary.files+1] = pathItem
-                hasFiles = true
+            if insertFile(getFileNameNoExtension(fileList[i]), tokenizeFile(itemPath), currentSubTable) then hasFiles = true end
+        end
+
+    end
+
+    return hasFiles
+end
+
+local function getBackPath(folderName, layer, skips)
+    if layer <= 1 then return folderName end
+    return ("../"):rep(skips+1)..folderName
+end
+
+local function getRelativePath(fromFile, toFile)
+    local fromParts = {}
+    local toParts = {}
+
+    for part in fs.getDir(fromFile):gmatch("[^/]+") do
+        fromParts[#fromParts+1] = part
+    end
+
+    for part in toFile:gmatch("[^/]+") do
+        toParts[#toParts+1] = part
+    end
+
+    -- Find the common path prefix
+    local common = 0
+
+    while common < #fromParts and common < #toParts
+        and fromParts[common+1] == toParts[common+1] do
+        common = common + 1
+    end
+
+    local result = {}
+
+    -- Go upwards from the current directory
+    for i = common+1, #fromParts do
+        result[#result+1] = ".."
+    end
+
+    -- Then descend into the target path
+    for i = common+1, #toParts do
+        result[#result+1] = toParts[i]
+    end
+
+    return table.concat(result, "/")
+end
+
+local function useDocTree(docBranch, folderName, skips, layer, outputPath, indexPath, parentSummaryPath)
+    local summaryOutputPaths = {}
+
+    local generationPath = outputPath
+    if layer == 0 then generationPath = fs.combine(generationPath, folderName) end
+
+    local currentSummaryPath
+    if #docBranch.files > 0 then currentSummaryPath = generationPath..".md" end
+
+    local childParentSummaryPath = currentSummaryPath or parentSummaryPath
+
+    local file
+    for i=1,#docBranch.files do
+        file = docBranch.files[i]
+        generateDocs(file.tokens, file.path, getBackPath(folderName, layer+1, skips), outputPath)
+    end
+
+    local folder
+    for i=1,#docBranch.folders do
+        folder = docBranch.folders[i]
+
+        local newSkips = skips
+        local newIndexPath = fs.combine(indexPath, folder.path)
+
+        if #folder.files == 0 then
+            newSkips = newSkips + 1
+        else
+            summaryOutputPaths[#summaryOutputPaths+1] = newIndexPath
+            newSkips = 0
+            if layer > 0 then newIndexPath = fs.getName(newIndexPath) end
+        end
+
+        if folder.hasFiles then
+            local summaryOut = useDocTree(folder, folder.path, newSkips, layer+1, fs.combine(outputPath, folder.path), newIndexPath, childParentSummaryPath)
+
+            if #folder.files == 0 then
+                for j=1,#summaryOut do
+                    summaryOutputPaths[#summaryOutputPaths+1] = summaryOut[j]
+                end
             end
         end
     end
 
-    if hasFiles then
-        generateSummary(summaryPath, summary, getCorrectBackPath(path, layer), outputPath:sub(#docsFolderPath+2))
+    if currentSummaryPath then
+        local file = io.open(currentSummaryPath,"w")
+
+        local summaryHead = outputPath:sub(#docsFolderPath+2)
+
+        if genSettings.misc.summaryPathDiv ~= "/" then
+            summaryHead = summaryHead:gsub("/",genSettings.misc.summaryPathDiv)
+        end
+
+        file:write("# Package: "..summaryHead.."\n\n")
+
+        if parentSummaryPath then
+            local backPath = getRelativePath(currentSummaryPath,parentSummaryPath)
+            file:write("back to ["..getFileNameNoExtension(fs.getName(parentSummaryPath)).."]("..backPath..")\n")
+        end
+
+        if #summaryOutputPaths > 0 then
+            file:write("## Sub-Packages:\n")
+            for i=1,#summaryOutputPaths do
+                file:write("["..summaryOutputPaths[i].."]("..summaryOutputPaths[i]..".md)<br>\n")
+            end
+            file:write("\n")
+        end
+
+        if #docBranch.files > 0 then
+            file:write("## Files:\n")
+            local path
+            for i=1,#docBranch.files do
+                path =docBranch.files[i].path
+                if layer ~= 0 then path = fs.combine(folderName,path) end
+
+                file:write("["..docBranch.files[i].path.."]("..path..".md)")
+            end
+        end
+
+        file:close()
     end
-    return hasFiles
+
+    return summaryOutputPaths
 end
 
 fs.delete(outputFolderPath)
+logger = io.open(fs.combine(logsFolderPath,getFileNameNoExtension(fs.getName(filePath))..".log"),"w")
 
+--TODO: hook up logger
 if fs.isDir(filePath) then
-    recursiveGenerating(filePath, 0, outputFolderPath)
+    scanFiles(filePath,docTree)
+
+    if docTree.hasFiles then
+        useDocTree(docTree, docTree.path, 0, 0, outputFolderPath, "")
+
+        --logger:write(textutils.serialise(docTree))
+
+        term.setTextColor(colors.gray)
+        print("generated documentation in '"..outputFolderPath.."/'")
+        term.setTextColor(colors.white)
+    else
+        warn("There are no files with a documentation attached")
+    end
 else--file
-    generateDocs(filePath, nil, outputFolderPath)
+    generateDocs(tokenizeFile(filePath), getFileNameNoExtension(fs.getName(filePath)), nil, outputFolderPath)
 end
 
---print(textutils.serialise(packageSummaries))
-
-term.setTextColor(colors.gray)
-print("generated documentation in '"..outputFolderPath.."/'")
-term.setTextColor(colors.white)
+if logger then logger:close() end
