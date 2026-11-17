@@ -86,8 +86,9 @@ end
 local function makeSettings()
     local genSettings = {}
 
-    genSettings.logging={}
-    genSettings.logging.bufferSize = 20
+    genSettings.flags = {}
+    genSettings.flags.docLocals = false
+    genSettings.flags.allowAdvancedHtml = true
 
     genSettings.misc={}
     genSettings.misc.typeSep = "|"
@@ -95,14 +96,13 @@ local function makeSettings()
     genSettings.misc.warnParagraph = "style=\"color:red;\""
     genSettings.misc.maxPathLen = 44
 
-    genSettings.formatting={}
-    genSettings.formatting.inputs = "**({types})** {name}: {desc}"
-    genSettings.formatting.returns = "**({types})** {name}: {desc}"
-    genSettings.formatting.seeAlso = "**[{label}]({file})**: {desc}"
+    genSettings.logging={}
+    genSettings.logging.bufferSize = 20
 
-    genSettings.flags = {}
-    genSettings.flags.docLocals = false
-    genSettings.flags.allowAdvancedHtml = true
+    genSettings.formatting={}
+    genSettings.formatting.inputs = "- **({types})** {name}: {desc}"
+    genSettings.formatting.returns = "- **({types})** {name}: {desc}"
+    genSettings.formatting.seeAlso = "- **[{label}]({file})**: {desc}"
 
     return genSettings
 end
@@ -778,8 +778,10 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
 
         if #summaryOutputPaths > 0 then
             file:write("## Sub-Packages:\n")
+            local displayPath
             for i=1,#summaryOutputPaths do
-                file:write("**["..summaryOutputPaths[i].."]("..summaryOutputPaths[i]..".md)**<br>\n")
+                displayPath = summaryOutputPaths[i]:gsub("/",genSettings.misc.pathDiv)
+                file:write("**["..displayPath.."]("..summaryOutputPaths[i]..".md)**<br>\n")
             end
             file:write("\n")
         end

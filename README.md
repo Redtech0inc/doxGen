@@ -20,7 +20,8 @@ example.lua:
 ---@explanation prints:
 ---@explanation examples
 ---@explanation go here
----@see example example this links back to this file
+---@warn just testing warnings
+---@see example # this links back to this file (currently disabled)
 function someMethod(param1, param2, param3)
     --just imagine there is some code here that makes it work
     return aString, tableOrNumber
@@ -29,7 +30,7 @@ end
 
 and get out:
 
--------------------------------------------
+---
 
 # example
 
@@ -40,13 +41,13 @@ and get out:
      even preserves formatting<br>
 
 ### Parameters:
-<b>(string)</b> param1: this is a parameter description<br>
-<b>(table|nil)</b> param2: this parameter has two possible types<br>
-<b>(string|nil|number|table)</b> param3: this is also possible<br>
+**(string)** param1: this is a parameter description<br>
+**(table|nil)** param2: this parameter has two possible types<br>
+**(string|nil|number|table)** param3: this is also possible<br>
 
 ### Returns:
-<b>(string)</b> of: course there is a return type<br>
-<b>(table|number)</b> even: allows a second return value<br>
+**(string)** of: course there is a return type<br>
+**(table|number)** even: allows a second return value<br>
 
 ### Example:
 ```lua
@@ -58,10 +59,15 @@ prints:<br>
 examples<br>
 go here<br>
 
-### See Also:
-[example](example): this links back to this file
+<p style=color:red;>
+    <b>WARNINGS:</b><br>
+    just testing warnings<br>
+</p>
 
--------------------------------------------
+### See Also:
+**[example](#)**: this links back to this file (currently disabled)<br>
+
+---
 
 ## Annotations
 
@@ -162,6 +168,94 @@ or
 ```lua
 ---@see ../random random this is a link to random.md which is in the previous directory
 ```
+
+## Settings
+
+settings are a way to change the behaviour of the Documentation Generator without modifying the source code<br>
+(i don't know why i even describe this to you, you should know what settings are)<br>
+
+### flags
+#### docLocals
+if `true` will document method definitions that are like `local function blaBlaBla()` as well<br>
+<br>
+type: `boolean`<br>
+default: `false`
+
+#### allowAdvancedHtml
+if `false` will avoid tags as much as possible in the documentation. Can be useful for less modern markdown renderers. **It however does not change user given documentation**<br>
+<br>
+type: `boolean`<br>
+default: `true`
+
+### misc
+#### warnParagraph
+this is the styling for the paragraph block for warnings<br>
+will only be used if allowAdvancedHtml is `true`<br>
+<br>
+type: `string`<br>
+default: `style=color:red;`
+
+#### typeSep
+this is the separator between type names<br>
+<br>
+type: `string`<br>
+default: `|`
+
+#### pathDiv
+this is what will be shown in between path names<br>
+<br>
+type: `string`<br>
+default: `/`
+
+#### maxPathLen
+this is the maximum number of characters a displayed path (inside of a docs file) can be before the generator abbreviates it<br>
+<br>
+type: `number`<br>
+default: `44`
+
+### logging
+#### bufferSize
+this is how many lines the logger can have in its buffer before writing them to the log (will become 1 if 0 or negative)<br>
+<br>
+type: `number`<br>
+default: `20`
+
+### formatting
+formatting is done a bit like python's formatting system except that `{}` must point back to what input variable they refer to<br>
+**if a formatting notation is not provided or empty it will be replaced with an empty string**
+
+#### inputs
+this formatting string is used to define how parameters are listed in the documentation<br>
+<br>
+type: `string`<br>
+default: `- **({types})** {name}: {desc}`<br>
+<br>
+**provided input values:**<br>
+- `{types}`: the already formatted string of all types that can be provided
+- `{name}`: the name of the parameter
+- `{desc}`: the description of the parameter
+
+#### returns
+this formatting string is used to define how returns are listed in the documentation<br>
+<br>
+type: `string`<br>
+default: `- **({types})** {name}: {desc}`<br>
+<br>
+**provided input values:**<br>
+- `{types}`: the already formatted string of all types that can be returned
+- `{name}`: the name/label of the return
+- `{desc}`: the description of the return
+
+#### seeAlso
+this is the formatting string used to define how links to other files are listed in the documentation<br>
+<br>
+type: `string`<br>
+default: `- **[{label}]({file})**: {desc}`<br>
+<br>
+**provided input values:**
+- `{label}`: the label/display name of the link
+- `{file}`: the file it links to
+- `{desc}`: the description of the link
 
 ## important
 
