@@ -13,8 +13,8 @@ example.lua:
 ---@param param1 string this is a parameter description
 ---@param param2 table|nil this parameter has two possible types
 ---@param param3 string|nil|number|table this is also possible
----@return string of course there is a return type
----@return table|number even allows a second return value
+---@return string return1 of course there is a return type
+---@return table|number return2 even allows a second return value
 ---@example print("examples")
 ---@example print("go here")
 ---@explanation prints:
@@ -41,13 +41,13 @@ and get out:
      even preserves formatting<br>
 
 ### Parameters:
-**(string)** param1: this is a parameter description<br>
-**(table|nil)** param2: this parameter has two possible types<br>
-**(string|nil|number|table)** param3: this is also possible<br>
+- **(string)** param1: this is a parameter description<br>
+- **(table|nil)** param2: this parameter has two possible types<br>
+- **(string|nil|number|table)** param3: this is also possible<br>
 
 ### Returns:
-**(string)** of: course there is a return type<br>
-**(table|number)** even: allows a second return value<br>
+- **(string)** return1: of course there is a return type<br>
+- **(table|number)** return2: even allows a second return value<br>
 
 ### Example:
 ```lua
@@ -101,7 +101,7 @@ or
 ### @return
 put
 ```lua
----@return <tape> <name> <description>
+---@return <type> <name> <description>
 ```
 
 again in practice<br>
