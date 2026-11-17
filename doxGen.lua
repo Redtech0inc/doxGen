@@ -18,10 +18,30 @@ local function setupFolder(folderPath)
     end
 end
 
+local logger, genSettings
+local linesInBuffer = 0
+local function log(msg)
+    if logger then
+        if type(msg) ~= "nil" then
+            logger:write(tostring(msg),"\n")
+        else
+            logger:write("\n")
+        end
+        linesInBuffer = linesInBuffer + 1
+
+        if linesInBuffer >= math.max(genSettings.logging.bufferSize,1) then --i can use this here cause the settings are loaded as soon as the program starts
+            logger:flush()
+            linesInBuffer = 0
+        end
+    end
+end
+
 local function warn(msg)
+    local msg = tostring(msg)
+    log("warning: "..msg)
     local color = term.getTextColor()
-    term.setTextColor(colors.orange)
-    print("warn: "..tostring(msg))
+    term.setTextColor(colors.red)
+    print("warning: "..msg)
     term.setTextColor(color)
 end
 
@@ -66,18 +86,23 @@ end
 local function makeSettings()
     local genSettings = {}
 
+    genSettings.logging={}
+    genSettings.logging.bufferSize = 20
+
     genSettings.misc={}
     genSettings.misc.typeSep = "|"
-    genSettings.misc.summaryPathDiv = "/"
+    genSettings.misc.pathDiv = "/"
     genSettings.misc.warnParagraph = "style=\"color:red;\""
-    
+    genSettings.misc.maxPathLen = 44
+
     genSettings.formatting={}
-    genSettings.formatting.inputs = "<b>({types})</b> {name}: {desc}"
-    genSettings.formatting.returns = "<b>({types})</b> {name}: {desc}"
-    genSettings.formatting.seeAlso = "[{label}]({file}): {desc}"
+    genSettings.formatting.inputs = "**({types})** {name}: {desc}"
+    genSettings.formatting.returns = "**({types})** {name}: {desc}"
+    genSettings.formatting.seeAlso = "**[{label}]({file})**: {desc}"
 
     genSettings.flags = {}
     genSettings.flags.docLocals = false
+    genSettings.flags.allowAdvancedHtml = true
 
     return genSettings
 end
@@ -159,13 +184,13 @@ end
 local mountPath = fs.getDir(shell.getRunningProgram())
 if mountPath == "rom/" then mountPath = "" end
 
+genSettings = loadSettings(mountPath)
+
 local docsFolderPath = fs.combine(mountPath,"docs")
 local logsFolderPath = fs.combine(mountPath,"logs")
 
 setupFolder(docsFolderPath)
 setupFolder(logsFolderPath)
-
-local genSettings = loadSettings(mountPath)
 
 print()
 term.setTextColor(colors.blue)
@@ -173,8 +198,15 @@ print("please enter the path of the directory you would like to generate documen
 term.setTextColor(colors.orange)
 print("will recursively iterate over the content if the target is a folder")
 term.setTextColor(colors.white)
+
+local active = false
 local filePath = arrowRead("> ",colors.lightGray)
-if not fs.exists(filePath) or filePath == "" then error("cannot use '"..getPathString(filePath).."' as input either doesn't exist or is protected")
+if not fs.exists(filePath) then
+    warn("cannot use '"..getPathString(filePath).."' as file/folder doesn't exist")
+elseif filePath == "/" or filePath == "" then
+    warn("cannot use 'root' as it is protected")
+else
+    active = true
 end
 
 local outputFolderPath = fs.combine(docsFolderPath,getFileNameNoExtension(fs.getName(filePath)))
@@ -304,7 +336,10 @@ lineExpr["@warn"] = function(line, methodTbl)
     methodTbl.warnings[#methodTbl.warnings+1] = line:sub(10)
 end
 
+local methodsTokenized = 0
 local function tokenizeFile(filePath)
+    log("tokenizing: "..filePath)
+
     local docTokens = {}
     local methodTbl = resetMethodTbl();
 
@@ -331,8 +366,10 @@ local function tokenizeFile(filePath)
                     methodTbl = resetMethodTbl();
                 elseif name then
                     methodTbl.def = name
+                    log("    tokenized method "..name)
 
                     docTokens[#docTokens+1] = methodTbl
+                    methodsTokenized = methodsTokenized + 1
 
                     --reset method tracking
                     methodTbl = resetMethodTbl();
@@ -341,6 +378,8 @@ local function tokenizeFile(filePath)
         end
     end
 
+    log("done!")
+    log()
     return docTokens
 end
 
@@ -433,12 +472,20 @@ local serializers = {
     {
         index = "warnings",
         func = function(file, method)
-            file:write("<p "..genSettings.misc.warnParagraph..">\n")
-            file:write("    <b>WARNINGS:</b><br>\n")
-            for j=1,#method.warnings do
-                file:write("    "..method.warnings[j],"<br>\n")
+            if genSettings.flags.allowAdvancedHtml then
+                file:write("<p "..genSettings.misc.warnParagraph..">\n")
+                file:write("    <b>WARNINGS:</b><br>\n")
+                for j=1,#method.warnings do
+                    file:write("    "..method.warnings[j],"<br>\n")
+                end
+                file:write("</p>\n")
+            else
+                file:write("**WARNINGS:**<br>\n")
+                for j=1,#method.warnings do
+                    file:write("**",method.warnings[j],"**<br>\n")
+                end
+                file:write("\n")
             end
-            file:write("</p>\n")
         end
     },
     {
@@ -460,8 +507,12 @@ local serializers = {
     }
 }
 
-local function generateDocs(docTokens, name, backPath, parentOutputPath)
+local function generateDocs(docTokens, name, head, backPath, parentOutputPath)
+    if not docTokens then return end
+    if #docTokens == 0 then return end
+
     local outputPath = fs.combine(parentOutputPath,name..".md")
+    log("generating documentation for: "..outputPath)
 
     local file = io.open(outputPath,"w")
 
@@ -470,9 +521,9 @@ local function generateDocs(docTokens, name, backPath, parentOutputPath)
         return;
     end
 
-    file:write("# "..name,"\n")
+    file:write("# "..head,"\n")
 
-    if backPath then file:write("back to package ["..fs.getName(backPath).."]("..backPath..".md)\n") end
+    if backPath then file:write("back to package **["..fs.getName(backPath).."]("..backPath..".md)**\n") end
     file:write("\n")
 
     local method
@@ -497,18 +548,18 @@ local function generateDocs(docTokens, name, backPath, parentOutputPath)
 
         if i ~= #docTokens then file:write("\n") end
     end
-    if backPath then file:write("---\nback to package ["..fs.getName(backPath).."]("..backPath..".md)") end
+    if backPath then file:write("---\nback to package **["..fs.getName(backPath).."]("..backPath..".md)**") end
     file:close()
-end
 
-local logger
+    log("success!")
+end
 
 --[[
     hasFiles = false/true
     files ={
         {   
             path = "just the file name with extension"
-            tokens=nil
+            tokens={}--tokens from tokenizer
         },
         ...
     },
@@ -518,7 +569,7 @@ local logger
             files ={
                 {
                     path="just the file name with extension"
-                    tokens=nil
+                    tokens={}--tokens from tokenizer
                 },
                 ...
             },
@@ -555,13 +606,16 @@ local function insertFile(file,tokens,currentSubTable)
     return true
 end
 
+local foldersScanned, filesScanned = 0, 0
 local function scanFiles(path,currentSubTable)
+    log("entering folder: "..path)
     local fileList = fs.list(path)
 
     local hasFiles = false
     local itemPath
     for i=1,#fileList do
         itemPath = fs.combine(path,fileList[i])
+        log("scanning: "..itemPath)
 
         if fs.isDir(itemPath) then
             local index = insertFolder(fileList[i],currentSubTable)
@@ -569,8 +623,10 @@ local function scanFiles(path,currentSubTable)
                 currentSubTable.hasFiles = true
                 hasFiles = true
             end
+            foldersScanned = foldersScanned + 1
         else
             if insertFile(getFileNameNoExtension(fileList[i]), tokenizeFile(itemPath), currentSubTable) then hasFiles = true end
+            filesScanned = filesScanned + 1
         end
 
     end
@@ -618,6 +674,44 @@ local function getRelativePath(fromFile, toFile)
     return table.concat(result, "/")
 end
 
+local function formatHeader(head)
+    local parts = {}
+
+    for part in head:gmatch("[^/]+") do
+        parts[#parts+1] = part
+    end
+
+    local output = ""
+    local tempOut
+    while #parts>0 do
+        if #output == 0 then --have to just add it even if it's too long cause there needs to be something
+            output = parts[#parts]
+            parts[#parts] = nil
+        else
+            tempOut = parts[#parts]..genSettings.misc.pathDiv..output
+
+            if #tempOut < genSettings.misc.maxPathLen then
+                output = tempOut
+                parts[#parts] = nil
+            else
+                break
+            end
+        end
+    end
+
+    if #parts > 0 then
+        if genSettings.flags.allowAdvancedHtml then
+            local rest = table.concat(parts,genSettings.misc.pathDiv)
+            output = "<abbr title=\""..rest.."\">...</abbr>"..genSettings.misc.pathDiv..output
+        else
+            output = "..."..genSettings.misc.pathDiv..output
+        end
+    end
+
+    return output
+end
+
+local docsGenerated, summariesGenerated = 0, 0
 local function useDocTree(docBranch, folderName, skips, layer, outputPath, indexPath, parentSummaryPath)
     local summaryOutputPaths = {}
 
@@ -632,7 +726,11 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
     local file
     for i=1,#docBranch.files do
         file = docBranch.files[i]
-        generateDocs(file.tokens, file.path, getBackPath(folderName, layer+1, skips), outputPath)
+
+        generateDocs(file.tokens, file.path, formatHeader(fs.combine(outputPath,file.path):sub(#docsFolderPath+2)), getBackPath(folderName, layer+1, skips), outputPath)
+        file.tokens = nil --we can erase this to get back memory (we don't need it anymore)
+
+        docsGenerated = docsGenerated + 1
     end
 
     local folder
@@ -662,25 +760,26 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
     end
 
     if currentSummaryPath then
+        log("generating summary: "..currentSummaryPath)
+
         local file = io.open(currentSummaryPath,"w")
 
-        local summaryHead = outputPath:sub(#docsFolderPath+2)
-
-        if genSettings.misc.summaryPathDiv ~= "/" then
-            summaryHead = summaryHead:gsub("/",genSettings.misc.summaryPathDiv)
+        if not file then
+            warn("cannot open summary file for '"..currentSummaryPath.."'")
+            return summaryOutputPaths
         end
 
-        file:write("# Package: "..summaryHead.."\n\n")
+        file:write("# Package: "..formatHeader(outputPath:sub(#docsFolderPath+2)).."\n\n")
 
         if parentSummaryPath then
             local backPath = getRelativePath(currentSummaryPath,parentSummaryPath)
-            file:write("back to ["..getFileNameNoExtension(fs.getName(parentSummaryPath)).."]("..backPath..")\n")
+            file:write("back to **["..getFileNameNoExtension(fs.getName(parentSummaryPath)).."]("..backPath..")**\n")
         end
 
         if #summaryOutputPaths > 0 then
             file:write("## Sub-Packages:\n")
             for i=1,#summaryOutputPaths do
-                file:write("["..summaryOutputPaths[i].."]("..summaryOutputPaths[i]..".md)<br>\n")
+                file:write("**["..summaryOutputPaths[i].."]("..summaryOutputPaths[i]..".md)**<br>\n")
             end
             file:write("\n")
         end
@@ -692,36 +791,78 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
                 path =docBranch.files[i].path
                 if layer ~= 0 then path = fs.combine(folderName,path) end
 
-                file:write("["..docBranch.files[i].path.."]("..path..".md)")
+                file:write("**["..docBranch.files[i].path.."]("..path..".md)**")
             end
         end
 
         file:close()
+        log("done!")
+
+        summariesGenerated = summariesGenerated + 1
     end
 
     return summaryOutputPaths
 end
 
 fs.delete(outputFolderPath)
-logger = io.open(fs.combine(logsFolderPath,getFileNameNoExtension(fs.getName(filePath))..".log"),"w")
+local loggingPath = fs.combine(logsFolderPath,getFileNameNoExtension(fs.getName(filePath))..".log")
+if active then logger = io.open(loggingPath,"w") end
 
+local generatedFiles = false
 --TODO: hook up logger
-if fs.isDir(filePath) then
+if active and fs.isDir(filePath) then
+    log("<=================== scanning ==================>\n")
+
     scanFiles(filePath,docTree)
+
+    log("<============== scanning complete ==============>")
+    log("<=============== generating docs ===============>\n")
 
     if docTree.hasFiles then
         useDocTree(docTree, docTree.path, 0, 0, outputFolderPath, "")
-
-        --logger:write(textutils.serialise(docTree))
-
-        term.setTextColor(colors.gray)
-        print("generated documentation in '"..outputFolderPath.."/'")
-        term.setTextColor(colors.white)
+        generatedFiles = true
     else
         warn("There are no files with a documentation attached")
     end
-else--file
-    generateDocs(tokenizeFile(filePath), getFileNameNoExtension(fs.getName(filePath)), nil, outputFolderPath)
+
+    log("\n<=============== docs generated ===============>")
+elseif active then --file
+    local name = getFileNameNoExtension(fs.getName(filePath));
+    generateDocs(tokenizeFile(filePath), name, name, nil, outputFolderPath)
+    if methodsTokenized > 0 then
+        generatedFiles = true
+        --set all the meta data correctly
+        docsGenerated = 1
+    else
+        warn("There was no documentation attached")
+    end
+    filesScanned = 1
 end
 
-if logger then logger:close() end
+if generatedFiles then
+    term.setTextColor(colors.white)
+    print()
+    print("generated documentation in '"..outputFolderPath.."/'")
+end
+if logger then
+    logger:write("<==================== info ====================>\n\n")
+    logger:write("<================== settings ==================>\n")
+    logger:write(getSimpleJSONStyleMap(genSettings,1),"\n\n")
+    logger:write("<================== meta data =================>\n")
+
+    if fs.isDir(filePath) then logger:write("Target Type: Folder\n")
+    else logger:write("Target Type: File\n")
+    end
+
+    logger:write("Folders Scanned: "..foldersScanned,"\n")
+    logger:write("Files Scanned: "..filesScanned,"\n")
+    logger:write("Methods Documented: "..methodsTokenized,"\n")
+    logger:write("Documentation Pages Generated: "..docsGenerated,"\n")
+    logger:write("Package Indices Generated: "..summariesGenerated,"\n\n")
+    logger:write("<==================== info ====================>")
+
+    term.setTextColor(colors.gray)
+    print("log in '"..loggingPath.."'")
+    term.setTextColor(colors.white)
+    logger:close()
+end
