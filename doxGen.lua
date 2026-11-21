@@ -481,7 +481,7 @@ local function tokenizeFile(filePath)
             elseif injectedLineExpr[tokens[1]] then --injected line expr
 
                 local subTbl = methodTbl[tokens[1]:sub(2)]
-                subTbl[#subTbl+1] = injectedLineExpr[tokens[1]](tokens)
+                subTbl[#subTbl+1] = injectedLineExpr[tokens[1]](line)
 
             else
                 methodTbl.desc[#methodTbl.desc+1] = line:sub(4) --use this to preserve written form
