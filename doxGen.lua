@@ -188,9 +188,17 @@ genSettings = loadSettings(mountPath)
 
 local docsFolderPath = fs.combine(mountPath,"docs")
 local logsFolderPath = fs.combine(mountPath,"logs")
+local injectionsFolderPath = fs.combine(mountPath,"injections")
 
 setupFolder(docsFolderPath)
 setupFolder(logsFolderPath)
+setupFolder(injectionsFolderPath)
+
+local injectionsJsonPath = fs.combine(injectionsFolderPath,"json")
+local injectionsCodePath = fs.combine(injectionsFolderPath,"code")
+
+setupFolder(injectionsJsonPath)
+setupFolder(injectionsCodePath)
 
 print()
 term.setTextColor(colors.blue)
@@ -211,41 +219,133 @@ end
 
 local outputFolderPath = fs.combine(docsFolderPath,getFileNameNoExtension(fs.getName(filePath)))
 
---[[
-format:
-    {
-        def = "name of method",
-        desc = { <- use table to preserve line format
-                "description line 1",
-                "desc line 2",
-                ...
-            },
-        inputs = { <- if inputs, description and returns empty just says nothing
-            {
-                name = "input name",
-                types = { <- if nil assumes any
-                    "type of input",
-                    "2nd type of input",
-                    ...
-                },
-                desc = "desc"
-            },
-            ...
-        },
-        returns = { <- if empty assumes nil as return
-            {
-                name = "name of the return", <- just there for anyone that needs it
-                types = { <- if empty assumes any type
-                    "type of return",
-                    "2nd type of return"
+--logging setup
+local loggingPath = fs.combine(logsFolderPath,getFileNameNoExtension(fs.getName(filePath))..".log")
+if active then logger = io.open(loggingPath,"w") end
+
+--Injection Stuff
+local idBlackList = {
+    def=true,
+    desc = true,
+    inputs = true,
+    returns = true,
+    exampleLines = true,
+    exampleDesc = true,
+    seeAlso = true,
+    warnings = true
+}
+
+local injections = {}
+
+local function filterEnv(env)
+    local output = {}
+    for k,v in pairs(env) do
+        if v ~= _G[k] then
+            output[k] = v
+        end
+    end
+    return output
+end
+
+local function loadInjectionEnv(filePath)
+    if not fs.exists(filePath) then
+        warn(filePath.." doesn't exist")
+        return {}
+    end
+
+    local fEnv = setmetatable({},{__index = _G})
+    local func, msg = loadfile(filePath,"t",fEnv)
+
+    if not func then
+        warn("cannot load: "..filePath)
+        warn("msg: "..msg)
+        return {}
+    end
+    func()
+
+    return filterEnv(fEnv)
+end
+
+log("<================= injections =================>")
+
+local function getInjection(injectionCtx, codePath)
+    if injectionCtx then
+        if
+            type(injectionCtx.id) == "string" and
+            type(injectionCtx.capture) == "string" and
+            type(injectionCtx.format) == "string"
+        then
+            injectionCtx.id = injectionCtx.id:lower():match("^(%S+)")
+
+            if idBlackList[injectionCtx.id] then
+                warn("injection failed cause \""..injectionCtx.id.."\" is a protected id")
+                return nil
+            end
+            if not injectionCtx.isLineExpr then injectionCtx.isLineExpr = false end
+
+            local fEnv = loadInjectionEnv(codePath)
+
+            if fEnv[injectionCtx.capture] then
+                local injection = {
+                    isRawLine = injectionCtx.isLineExpr,
+                    capture = fEnv[injectionCtx.capture],
+                    serializer = injectionCtx.format
                 }
-                desc = "description of return"
-            },
-            ...
-        }
-    },
-    ...
-]]
+                if type(injectionCtx.index) == "number" then
+                    injection.index = math.floor(math.max(0,injectionCtx.index))
+                end
+
+                return injection, injectionCtx.id
+            end
+        end
+    end
+end
+
+term.setTextColor(colors.lightGray)
+local fPath, injectionCtx
+for _,fName in ipairs(fs.list(injectionsJsonPath)) do
+    fPath = fs.combine(injectionsJsonPath,fName)
+
+    if not fs.isDir(fPath) then
+        log("\nreading: "..fName)
+        print("\nreading injection: "..fName)
+        local file = io.open(fPath,"r")
+        if file then
+            injectionCtx = textutils.unserialiseJSON(file:read("a"))
+            file:close()
+            if injectionCtx then
+                if type(injectionCtx.instructions) == "table" and type(injectionCtx.code) == "string" then
+
+                    local codePath = fs.combine(injectionsCodePath,injectionCtx.code)
+                    local instruction
+                    for i=1,#injectionCtx.instructions do
+                        instruction = injectionCtx.instructions[i]
+                        local injection, id = getInjection(instruction, codePath)
+
+                        if injection then --don't need id nil check cause if id is nil injection is nil as well
+                            injections[id] = injection
+                            log("injected instruction: @"..id)
+                            print("injected instruction: @"..id)
+                        else
+                            warn("cannot inject instruction "..i)
+                            warn("given info: id:\""..tostring(instruction.id).."\", capture:\""..tostring(instruction.capture).."\", format:\""..tostring(instruction.format).."\"")
+                        end
+                    end
+                else
+                    warn("incomplete missing 'instructions' list or code reference")
+                end
+            else
+                warn(" contains malformed json")
+            end
+        else
+            warn("cannot open json file")
+        end
+    end
+end
+term.setTextColor(colors.white)
+
+log("\n<=============== injections done ==============>")
+if not fs.isDir(filePath) then log("<================ documentation ===============>\n") end
 
 local function parseTokens(line)
     if line:sub(1, 3) ~= "---" then
@@ -318,6 +418,10 @@ local function resetMethodTbl()
         seeAlso = {},
         warnings = {}
     }
+    --add injected tables
+    for id,_ in pairs(injections) do
+        methodTbl[id] = {}
+    end
     return methodTbl
 end
 
@@ -336,6 +440,20 @@ lineExpr["@warn"] = function(line, methodTbl)
     methodTbl.warnings[#methodTbl.warnings+1] = line:sub(10)
 end
 
+--capture injection
+local injectedInstruction = {}
+local injectedLineExpr = {}
+
+local injectionName
+for name,injection in pairs(injections) do
+    injectionName = "@"..name
+    if injection.isRawLine then
+        injectedLineExpr[injectionName] = injection.capture
+    else
+        injectedInstruction[injectionName] = injection.capture
+    end
+end
+
 local methodsTokenized = 0
 local function tokenizeFile(filePath)
     log("tokenizing: "..filePath)
@@ -350,10 +468,21 @@ local function tokenizeFile(filePath)
         if instructions[tokens[1]] then
             instructions[tokens[1]](tokens, methodTbl)
 
+        elseif injectedInstruction[tokens[1]] then
+
+            local subTbl = methodTbl[tokens[1]:sub(2)]
+            subTbl[#subTbl+1] = injectedInstruction[tokens[1]](tokens)
+
         elseif #tokens > 0 then --must preserve case
 
             if lineExpr[tokens[1]] then
                 lineExpr[tokens[1]](line,methodTbl)
+
+            elseif injectedLineExpr[tokens[1]] then --injected line expr
+
+                local subTbl = methodTbl[tokens[1]:sub(2)]
+                subTbl[#subTbl+1] = injectedLineExpr[tokens[1]](tokens)
+
             else
                 methodTbl.desc[#methodTbl.desc+1] = line:sub(4) --use this to preserve written form
             end
@@ -468,43 +597,77 @@ local serializers = {
                 end
             end
         end
-    },
-    {
-        index = "warnings",
-        func = function(file, method)
-            if genSettings.flags.allowAdvancedHtml then
-                file:write("<p "..genSettings.misc.warnParagraph..">\n")
-                file:write("    <b>WARNINGS:</b><br>\n")
-                for j=1,#method.warnings do
-                    file:write("    "..method.warnings[j],"<br>\n")
-                end
-                file:write("</p>\n")
-            else
-                file:write("**WARNINGS:**<br>\n")
-                for j=1,#method.warnings do
-                    file:write("**",method.warnings[j],"**<br>\n")
-                end
-                file:write("\n")
-            end
-        end
-    },
-    {
-        index = "seeAlso",
-        func = function(file, method)
-            file:write("### See Also:\n")
-            local seeAlso
-            for j=1,#method.seeAlso do
-                seeAlso = method.seeAlso[j]
+    }
+}
+
+--TODO: fix insertion oder issues for injection
+-- inject serializers
+local startInjectionIndex = #serializers --!inserts blow last black listed item
+
+for id,injection in pairs(injections) do
+    local serializer
+    if type(injection.serializer) == "function" then --custom serializer
+        serializer = setfenv(injection.serializer, setmetatable({formatString = formatString},{__index=_G}))
+    else --generic serializer with custom formatting
+        serializer = function(file, method)
+            file:write("### "..id:sub(1,1):upper()..id:sub(2),"\n")
+            for j=1,#method[id] do
                 file:write(
                     formatString(
-                        genSettings.formatting.seeAlso,
-                        seeAlso
-                    )
-                    ,"<br>\n"
+                        injection.serializer,
+                        method[id][j]
+                    ),
+                    "<br>\n"
                 )
             end
         end
-    }
+    end
+
+    if injection.index then
+        local index = startInjectionIndex+injection.index
+        table.insert(serializers, index, {index=id,func=serializer})
+    else
+        table.insert(serializers, {index=id,func=serializer})
+    end
+end
+
+--finish serializers
+
+serializers[#serializers+1]={
+    index = "warnings",
+    func = function(file, method)
+        if genSettings.flags.allowAdvancedHtml then
+            file:write("<p "..genSettings.misc.warnParagraph..">\n")
+            file:write("    <b>WARNINGS:</b><br>\n")
+            for j=1,#method.warnings do
+                file:write("    "..method.warnings[j],"<br>\n")
+            end
+            file:write("</p>\n")
+        else
+            file:write("**WARNINGS:**<br>\n")
+            for j=1,#method.warnings do
+                file:write("**",method.warnings[j],"**<br>\n")
+            end
+            file:write("\n")
+        end
+    end
+}
+serializers[#serializers+1]={
+    index = "seeAlso",
+    func = function(file, method)
+        file:write("### See Also:\n")
+        local seeAlso
+        for j=1,#method.seeAlso do
+            seeAlso = method.seeAlso[j]
+            file:write(
+                formatString(
+                    genSettings.formatting.seeAlso,
+                    seeAlso
+                )
+                ,"<br>\n"
+            )
+        end
+    end
 }
 
 local function generateDocs(docTokens, name, head, backPath, parentOutputPath)
@@ -554,31 +717,6 @@ local function generateDocs(docTokens, name, head, backPath, parentOutputPath)
     log("success!")
 end
 
---[[
-    hasFiles = false/true
-    files ={
-        {   
-            path = "just the file name with extension"
-            tokens={}--tokens from tokenizer
-        },
-        ...
-    },
-    folders = {
-        {
-            hasFiles = false/true
-            files ={
-                {
-                    path="just the file name with extension"
-                    tokens={}--tokens from tokenizer
-                },
-                ...
-            },
-            folders ={
-                ...
-            }
-        }
-    }
-]]
 local docTree = {
     path = getFileNameNoExtension(fs.getName(filePath)),
     hasFiles = false,
@@ -606,7 +744,7 @@ local function insertFile(file,tokens,currentSubTable)
     return true
 end
 
-local foldersScanned, filesScanned = 0, 0
+local foldersScanned, filesScanned = 1, 0
 local function scanFiles(path,currentSubTable)
     log("entering folder: "..path)
     local fileList = fs.list(path)
@@ -776,12 +914,13 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
             file:write("back to **["..getFileNameNoExtension(fs.getName(parentSummaryPath)).."]("..backPath..")**\n")
         end
 
+        --TODO: maybe add custom formatting strings to this as well
         if #summaryOutputPaths > 0 then
             file:write("## Sub-Packages:\n")
             local displayPath
             for i=1,#summaryOutputPaths do
                 displayPath = summaryOutputPaths[i]:gsub("/",genSettings.misc.pathDiv)
-                file:write("**["..displayPath.."]("..summaryOutputPaths[i]..".md)**<br>\n")
+                file:write("- **["..displayPath.."]("..summaryOutputPaths[i]..".md)**<br>\n")
             end
             file:write("\n")
         end
@@ -793,7 +932,7 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
                 path =docBranch.files[i].path
                 if layer ~= 0 then path = fs.combine(folderName,path) end
 
-                file:write("**["..docBranch.files[i].path.."]("..path..".md)**")
+                file:write("- **["..docBranch.files[i].path.."]("..path..".md)**<br>\n")
             end
         end
 
@@ -807,8 +946,6 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
 end
 
 fs.delete(outputFolderPath)
-local loggingPath = fs.combine(logsFolderPath,getFileNameNoExtension(fs.getName(filePath))..".log")
-if active then logger = io.open(loggingPath,"w") end
 
 local generatedFiles = false
 --TODO: hook up logger

@@ -1,5 +1,8 @@
 #vs code files
 .vscode
 
-#backups#
+#notes
+notes.txt
+
+#backups
 backup
