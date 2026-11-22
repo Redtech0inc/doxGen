@@ -625,7 +625,11 @@ for id,injection in pairs(injections) do
 
     if injection.index then
         local index = startInjectionIndex+injection.index
-        table.insert(serializers, index, {index=id,func=serializer})
+        if index >= #serializers then
+            table.insert(serializers, {index=id,func=serializer})
+        else
+            table.insert(serializers, index, {index=id,func=serializer})
+        end
     else
         table.insert(serializers, {index=id,func=serializer})
     end

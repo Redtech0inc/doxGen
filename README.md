@@ -257,7 +257,126 @@ default: `- **[{label}]({file})**: {desc}`<br>
 - `{file}`: the file it links to
 - `{desc}`: the description of the link
 
-## important
+## Injection
+This system allows for the addition of custom behaviour without modifying the source code
+
+### How to Create an Injection
+We first have to create an entry point for the documentation generator. We do this by making a json in the injections/json directory (the injections folder is in the same place as the doxGen file)
+
+#### Json
+this is what the json file should look like:
+```json
+{
+    "code": "codeFile.lua",
+    "instructions": [
+        {
+            "id": "someId",
+            "capture": "someFuncInCodeFile",
+            "format": "- **{someTag}**",
+        }
+    ]
+}
+```
+let's go over the keys one by one
+- `"code"`: this key tells the generator what file (containing the lua code for the capture) it has to use
+- `"instructions"` this is a list consisting of all instructions injected
+    - `"id"`: this key ios the name under which this instruction will be usable so `"test"` would mean you use it via `"@test"`
+    - `"capture"` this is the name of the function in the provided code file which turns the given raw instruction data into usable data. more on that later (this method has to be public and cannot be local)
+    - `"format"`: this is the formatting of the data provided by the capture function (can also be a method but more on that later)
+    - `"isLineExpr"`: this is a boolean that if `true` will make it so that the capture method gets a raw string that is the line parsed in instead of tokens (optional & `false` by default)
+    - `"index"`: the position of the generated text in the documentation (is 0 at minimum),(currently not very accurate if lots of injections try to have the same index since it utilizes `table.insert`)
+
+example:
+```json
+{
+    "code": "test.lua",
+    "instructions": [
+        {
+            "id": "test",
+            "capture": "testCapture",
+            "format": "- **{test}** & *{token}*"
+        }
+    ]
+}
+```
+here all the code is located in `injections/code/test.lua` with the method that captures the incoming data called testCapture and the resulting data being parsed into the formatting method with the template of `- **{test}** & *{token}*`
+
+#### Code
+this is the code provided to the json
+so this is the general content if `"isLineExpr"` is `false` in the json:
+```lua
+function captureInstruction(tokens)
+    return {someTag=tokens[2]}
+end
+```
+`tokens` is a table containing the words from the instruction line. `tokens[1]` is the instruction keyword (in out example: `@test`), and each subsequent token contains the text between spaces.<br>
+
+the return is a table where `someTag` is assigned data
+this means that if i now have `{someTag}` in the format section of the json it is replaced with the corresponding data. so each key in the table is a tag usable in the formatting
+
+**Note:** This does not have to return a table when using a custom serializer, since the serializer receives the captured data directly.
+<br>
+<br>
+<br>
+
+if `"isLineExpr"` is `true` then this could be the content:
+```lua
+function captureInstruction(line)
+    return {someTag=string.sub(line, 1, math.floor(#line/2))}
+end
+```
+here `line` is the direct line taken from the lua file that is currently being scanned
+
+example (this corresponds to the example json above):
+```lua
+function testCapture(tokens)
+    return {test=tokens[2],token=tokens[1]}
+end
+```
+here i take the tokens delivered by the usage of `@test` and turn them into usable data so if someone for example did
+`---@test word` it would return `{test="word",token="@test"}` which after formatting turns into `- **word** & *@test*`
+
+### Custom Serializers
+this is a bit more advanced & dangerous since you get direct references
+
+so lets first look at the changes to the json file:
+```json
+{
+    "code": "codeFile.lua",
+    "instructions": [
+        {
+            "id": "someId",
+            "capture": "someFuncInCodeFile",
+            "format": "someOtherFuncInCodeFile"
+        }
+    ]
+}
+```
+here `format` also references a method in `injections/code/codeFile.lua` named: `someOtherFuncInCodeFile`
+
+so lets give it what it demands (this is in direct reference to the json provided above):
+```lua
+function someOtherFuncInCodeFile(file, methodTbl)
+    file:write("### Head of this section")
+    for i=1,#methodTbl.someId do
+        file:write(methodTbl.someId[1].test,"<br>\n")
+    end
+end
+```
+`file` here is the **direct file handle** so **closing it will cause issues**<br>
+`methodTbl` is a table consisting of all data gathered for the method that is currently being documented (**clearing it will destroy the entire documentation chain** so **DO NOT CHANGE ANY DATA IN methodTbl**). Here we get the table of data that corresponding to our id (`someId`) as defined in the json file above and iterate over all the entries (each entry is a return of the capture method) since our example capture method produces a table like `{test="word",token="@test"}` we get the value of key `test` and write it in the file<br>
+<br>
+
+doxGen's string formatting method is added into the globals for custom serializers, you can find it under `formatString(format, valueTbl)`
+
+- `format` is the usual format strings you have seen before (e.g:`- **{test}** & *{token}*`)
+
+- `valueTbl` is a table where each formatting tag's e.g: `{test="word",token="@test"}` inserted into `- **{test}** & *{token}*` => `- **word** & *@test*`
+
+## For further Questions
+Just talk to me in my [Discord Server](https://discord.gg/XxRtg5dAzd) if you have any questions, or open a [GitHub issue](https://github.com/Redtech0inc/doxGen/issues) if something is clearly broken.
+
+## Important
 
 local functions will not be documented as they are lua's private methods <br>
 also definitions via don't work
