@@ -178,12 +178,14 @@ settings are a way to change the behaviour of the Documentation Generator withou
 #### docLocals
 if `true` will document method definitions that are like `local function blaBlaBla()` as well<br>
 <br>
+
 type: `boolean`<br>
 default: `false`
 
 #### allowAdvancedHtml
 if `false` will avoid tags as much as possible in the documentation. Can be useful for less modern markdown renderers. **It however does not change user given documentation**<br>
 <br>
+
 type: `boolean`<br>
 default: `true`
 
@@ -192,24 +194,28 @@ default: `true`
 this is the styling for the paragraph block for warnings<br>
 will only be used if allowAdvancedHtml is `true`<br>
 <br>
+
 type: `string`<br>
 default: `style=color:red;`
 
 #### typeSep
 this is the separator between type names<br>
 <br>
+
 type: `string`<br>
 default: `|`
 
 #### pathDiv
 this is what will be shown in between path names<br>
 <br>
+
 type: `string`<br>
 default: `/`
 
 #### maxPathLen
 this is the maximum number of characters a displayed path (inside of a docs file) can be before the generator abbreviates it<br>
 <br>
+
 type: `number`<br>
 default: `44`
 
@@ -217,6 +223,7 @@ default: `44`
 #### bufferSize
 this is how many lines the logger can have in its buffer before writing them to the log (will become 1 if 0 or negative)<br>
 <br>
+
 type: `number`<br>
 default: `20`
 
@@ -224,12 +231,17 @@ default: `20`
 formatting is done a bit like python's formatting system except that `{}` must point back to what input variable they refer to<br>
 **if a formatting notation is not provided or empty it will be replaced with an empty string**
 
+#### documents
+---
+
 #### inputs
 this formatting string is used to define how parameters are listed in the documentation<br>
 <br>
+
 type: `string`<br>
 default: `- **({types})** {name}: {desc}`<br>
 <br>
+
 **provided input values:**<br>
 - `{types}`: the already formatted string of all types that can be provided
 - `{name}`: the name of the parameter
@@ -238,9 +250,11 @@ default: `- **({types})** {name}: {desc}`<br>
 #### returns
 this formatting string is used to define how returns are listed in the documentation<br>
 <br>
+
 type: `string`<br>
 default: `- **({types})** {name}: {desc}`<br>
 <br>
+
 **provided input values:**<br>
 - `{types}`: the already formatted string of all types that can be returned
 - `{name}`: the name/label of the return
@@ -249,13 +263,42 @@ default: `- **({types})** {name}: {desc}`<br>
 #### seeAlso
 this is the formatting string used to define how links to other files are listed in the documentation<br>
 <br>
+
 type: `string`<br>
 default: `- **[{label}]({file})**: {desc}`<br>
 <br>
+
 **provided input values:**
 - `{label}`: the label/display name of the link
 - `{file}`: the file it links to
 - `{desc}`: the description of the link
+
+#### indices
+---
+
+#### packages
+this is the formatting string used in package indices for the `Sub-Packages` list<br>
+<br>
+
+type: `string`<br>
+default: `- **[{label}]({file})**`<br>
+<br>
+
+**provided input values:**
+- `{label}` the label/display name of the link
+- `{file}` the file it links to
+
+#### files
+this is the formatting string used in package indices for the `Files` list<br>
+<br>
+
+type: `string`<br>
+default: `- **[{label}]({file})**`<br>
+<br>
+
+**provided input values:**
+- `{label}` the label/display name of the link
+- `{file}` the file it links to
 
 ## Injection
 This system allows for the addition of custom behaviour without modifying the source code

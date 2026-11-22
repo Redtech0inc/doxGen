@@ -100,9 +100,14 @@ local function makeSettings()
     genSettings.logging.bufferSize = 20
 
     genSettings.formatting={}
-    genSettings.formatting.inputs = "- **({types})** {name}: {desc}"
-    genSettings.formatting.returns = "- **({types})** {name}: {desc}"
-    genSettings.formatting.seeAlso = "- **[{label}]({file})**: {desc}"
+    genSettings.formatting.indices = {}
+    genSettings.formatting.indices.packages = "- **[{label}]({file})**"
+    genSettings.formatting.indices.files = "- **[{label}]({file})**"
+
+    genSettings.formatting.document = {}
+    genSettings.formatting.document.inputs = "- **({types})** {name}: {desc}"
+    genSettings.formatting.document.returns = "- **({types})** {name}: {desc}"
+    genSettings.formatting.document.seeAlso = "- **[{label}]({file})**: {desc}"
 
     return genSettings
 end
@@ -547,7 +552,7 @@ local serializers = {
 
                 file:write(
                     formatString(
-                        genSettings.formatting.inputs,
+                        genSettings.formatting.document.inputs,
                         {
                             name = input.name,
                             desc = input.desc,
@@ -569,7 +574,7 @@ local serializers = {
 
                 file:write(
                     formatString(
-                        genSettings.formatting.returns,
+                        genSettings.formatting.document.returns,
                         {
                             name = returnData.name,
                             desc = returnData.desc,
@@ -665,7 +670,7 @@ serializers[#serializers+1]={
             seeAlso = method.seeAlso[j]
             file:write(
                 formatString(
-                    genSettings.formatting.seeAlso,
+                    genSettings.formatting.document.seeAlso,
                     seeAlso
                 )
                 ,"<br>\n"
@@ -924,7 +929,16 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
             local displayPath
             for i=1,#summaryOutputPaths do
                 displayPath = summaryOutputPaths[i]:gsub("/",genSettings.misc.pathDiv)
-                file:write("- **["..displayPath.."]("..summaryOutputPaths[i]..".md)**<br>\n")
+                file:write(
+                    formatString(
+                        genSettings.formatting.indices.packages,
+                        {
+                            label = displayPath,
+                            file = summaryOutputPaths[i]..".md"
+                        }
+                    )
+                    ,"<br>\n"
+                )
             end
             file:write("\n")
         end
@@ -933,10 +947,19 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
             file:write("## Files:\n")
             local path
             for i=1,#docBranch.files do
-                path =docBranch.files[i].path
+                path = docBranch.files[i].path
                 if layer ~= 0 then path = fs.combine(folderName,path) end
 
-                file:write("- **["..docBranch.files[i].path.."]("..path..".md)**<br>\n")
+                file:write(
+                    formatString(
+                        genSettings.formatting.indices.files,
+                        {
+                            label = docBranch.files[i].path,
+                            file = path..".md"
+                        }
+                    )
+                    ,"<br>\n"
+                )
             end
         end
 
