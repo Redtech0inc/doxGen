@@ -104,10 +104,10 @@ local function makeSettings()
     genSettings.formatting.indices.packages = "- **[{label}]({file})**"
     genSettings.formatting.indices.files = "- **[{label}]({file})**"
 
-    genSettings.formatting.document = {}
-    genSettings.formatting.document.inputs = "- **({types})** {name}: {desc}"
-    genSettings.formatting.document.returns = "- **({types})** {name}: {desc}"
-    genSettings.formatting.document.seeAlso = "- **[{label}]({file})**: {desc}"
+    genSettings.formatting.documents = {}
+    genSettings.formatting.documents.inputs = "- **({types})** {name}: {desc}"
+    genSettings.formatting.documents.returns = "- **({types})** {name}: {desc}"
+    genSettings.formatting.documents.seeAlso = "- **[{label}]({file})**: {desc}"
 
     return genSettings
 end
