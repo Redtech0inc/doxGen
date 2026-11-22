@@ -261,7 +261,7 @@ default: `- **[{label}]({file})**: {desc}`<br>
 This system allows for the addition of custom behaviour without modifying the source code
 
 ### How to Create an Injection
-We first have to create an entry point for the documentation generator. We do this by making a json in the injections/json directory (the injections folder is in the same place as the doxGen file)
+We first have to create an entry point for the documentation generator. We do this by making a json in the `injections/json` directory (the injections folder is in the same place as the doxGen file)
 
 #### Json
 this is what the json file should look like:
@@ -278,7 +278,7 @@ this is what the json file should look like:
 }
 ```
 let's go over the keys one by one
-- `"code"`: this key tells the generator what file (containing the lua code for the capture) it has to use
+- `"code"`: this key tells the generator what file (containing the lua code for the capture) it has to use (this path is relative to the `injections/code` directory)
 - `"instructions"` this is a list consisting of all instructions injected
     - `"id"`: this key ios the name under which this instruction will be usable so `"test"` would mean you use it via `"@test"`
     - `"capture"` this is the name of the function in the provided code file which turns the given raw instruction data into usable data. more on that later (this method has to be public and cannot be local)
