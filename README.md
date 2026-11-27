@@ -344,6 +344,13 @@ let's go over the keys one by one
     - `"isLineExpr"`: this is a boolean that if `true` will make it so that the capture method gets a raw string that is the line parsed in instead of tokens (optional & `false` by default)
     - `"index"`: the position of the generated text in the documentation (is 0 at minimum),(currently not very accurate if lots of injections try to have the same index since it utilizes `table.insert`)
 
+you also have the default tags of:
+- `{fileName}`: the name of the file
+- `{head}`: the header of the file
+- `{path}`: the absolute path of this docs file
+
+for the `"format"` section
+
 example:
 ```json
 {
