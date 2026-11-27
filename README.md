@@ -421,7 +421,7 @@ here `format` also references a method in `injections/code/codeFile.lua` named: 
 
 so lets give it what it demands (this is in direct reference to the json provided above):
 ```lua
-function someOtherFuncInCodeFile(file, methodTbl)
+function someOtherFuncInCodeFile(file, methodTbl, name, head, outputPath)
     file:write("### Head of this section")
     for i=1,#methodTbl.someId do
         file:write(methodTbl.someId[1].test,"<br>\n")
@@ -429,7 +429,13 @@ function someOtherFuncInCodeFile(file, methodTbl)
 end
 ```
 `file` here is the **direct file handle** so **closing it will cause issues**<br>
-`methodTbl` is a table consisting of all data gathered for the method that is currently being documented (**clearing it will destroy the entire documentation chain** so **DO NOT CHANGE ANY DATA IN methodTbl**). Here we get the table of data that corresponding to our id (`someId`) as defined in the json file above and iterate over all the entries (each entry is a return of the capture method) since our example capture method produces a table like `{test="word",token="@test"}` we get the value of key `test` and write it in the file<br>
+`methodTbl` is a table consisting of all data gathered for the method that is currently being documented (**clearing it will destroy the entire documentation chain** so **DO NOT CHANGE ANY DATA IN methodTbl**)<br>
+`name` is the name of the file without extension<br>
+`head` is the header of the file<br>
+`outputPath` this is the path of the file<br>
+<br>
+
+Here we get the table of data that corresponding to our id (`someId`) as defined in the json file above and iterate over all the entries (each entry is a return of the capture method) since our example capture method produces a table like `{test="word",token="@test"}` we get the value of key `test` and write it in the file<br>
 <br>
 
 doxGen's string formatting method is added into the globals for custom serializers, you can find it under `formatString(format, valueTbl)`
