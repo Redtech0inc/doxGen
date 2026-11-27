@@ -246,6 +246,9 @@ default: `- **({types})** {name}: {desc}`<br>
 - `{types}`: the already formatted string of all types that can be provided
 - `{name}`: the name of the parameter
 - `{desc}`: the description of the parameter
+- `{fileName}`: the name of the file
+- `{head}`: the header of the file
+- `{path}`: the absolute path of this docs file
 
 #### returns
 this formatting string is used to define how returns are listed in the documentation<br>
@@ -259,6 +262,9 @@ default: `- **({types})** {name}: {desc}`<br>
 - `{types}`: the already formatted string of all types that can be returned
 - `{name}`: the name/label of the return
 - `{desc}`: the description of the return
+- `{fileName}`: the name of the file
+- `{head}`: the header of the file
+- `{path}`: the absolute path of this docs file
 
 #### seeAlso
 this is the formatting string used to define how links to other files are listed in the documentation<br>
@@ -272,6 +278,9 @@ default: `- **[{label}]({file})**: {desc}`<br>
 - `{label}`: the label/display name of the link
 - `{file}`: the file it links to
 - `{desc}`: the description of the link
+- `{fileName}`: the name of the file
+- `{head}`: the header of the file
+- `{path}`: the absolute path of this docs file
 
 #### indices
 ---
@@ -285,8 +294,11 @@ default: `- **[{label}]({file})**`<br>
 <br>
 
 **provided input values:**
-- `{label}` the label/display name of the link
-- `{file}` the file it links to
+- `{label}`: the label/display name of the link
+- `{file}`: the file it links to
+- `{folderName}`: name of the folder this index is in
+- `{head}`: the header of the file
+- `{path}`: the absolute path of this index
 
 #### files
 this is the formatting string used in package indices for the `Files` list<br>
@@ -297,8 +309,11 @@ default: `- **[{label}]({file})**`<br>
 <br>
 
 **provided input values:**
-- `{label}` the label/display name of the link
-- `{file}` the file it links to
+- `{label}`: the label/display name of the link
+- `{file}`: the file it links to
+- `{folderName}`: name of the folder this index is in
+- `{head}`: the header of the file
+- `{path}`: the absolute path of this index
 
 ## Injection
 This system allows for the addition of custom behaviour without modifying the source code

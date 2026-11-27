@@ -544,7 +544,7 @@ local serializers = {
     },
     {
         index = "inputs",
-        func = function(file, method)
+        func = function(file, method, name, head, outputPath)
             file:write("### Parameters:\n")
             local input
             for j=1,#method.inputs do
@@ -552,10 +552,13 @@ local serializers = {
 
                 file:write(
                     formatString(
-                        genSettings.formatting.document.inputs,
+                        genSettings.formatting.documents.inputs,
                         {
                             name = input.name,
                             desc = input.desc,
+                            fileName = name,
+                            head = head,
+                            path = outputPath,
                             types = getTypesStr(input.types)
                         }
                     )
@@ -566,7 +569,7 @@ local serializers = {
     },
     {
         index = "returns",
-        func = function(file, method)
+        func = function(file, method, name, head, outputPath)
             file:write("### Returns:\n")
             local returnData
             for j=1,#method.returns do
@@ -574,10 +577,13 @@ local serializers = {
 
                 file:write(
                     formatString(
-                        genSettings.formatting.document.returns,
+                        genSettings.formatting.documents.returns,
                         {
                             name = returnData.name,
                             desc = returnData.desc,
+                            fileName = name,
+                            head = head,
+                            path = outputPath,
                             types = getTypesStr(returnData.types)
                         }
                     ),
@@ -614,13 +620,18 @@ for id,injection in pairs(injections) do
     if type(injection.serializer) == "function" then --custom serializer
         serializer = setfenv(injection.serializer, setmetatable({formatString = formatString},{__index=_G}))
     else --generic serializer with custom formatting
-        serializer = function(file, method)
+        serializer = function(file, method, name, head, outputPath)
             file:write("### "..id:sub(1,1):upper()..id:sub(2),"\n")
+            local methodTbl = {}
             for j=1,#method[id] do
+                methodTbl = method[id][j]
+                methodTbl.fileName = name
+                methodTbl.head = head
+                methodTbl.path = outputPath
                 file:write(
                     formatString(
                         injection.serializer,
-                        method[id][j]
+                        methodTbl
                     ),
                     "<br>\n"
                 )
@@ -663,15 +674,22 @@ serializers[#serializers+1]={
 }
 serializers[#serializers+1]={
     index = "seeAlso",
-    func = function(file, method)
+    func = function(file, method, name, head, outputPath)
         file:write("### See Also:\n")
         local seeAlso
         for j=1,#method.seeAlso do
             seeAlso = method.seeAlso[j]
             file:write(
                 formatString(
-                    genSettings.formatting.document.seeAlso,
-                    seeAlso
+                    genSettings.formatting.documents.seeAlso,
+                    {
+                        label = seeAlso.label,
+                        file = seeAlso.file,
+                        desc = seeAlso.desc,
+                        fileName = name,
+                        head = head,
+                        path = outputPath
+                    }
                 )
                 ,"<br>\n"
             )
@@ -710,7 +728,7 @@ local function generateDocs(docTokens, name, head, backPath, parentOutputPath)
 
             if type(method[serializer.index]) == "table" then
                 if #method[serializer.index] > 0 then
-                    serializer.func(file, method)
+                    serializer.func(file, method, name, head, outputPath)
                     file:write("\n")
                 end
             else
@@ -915,15 +933,15 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
             warn("cannot open summary file for '"..currentSummaryPath.."'")
             return summaryOutputPaths
         end
-
-        file:write("# Package: "..formatHeader(outputPath:sub(#docsFolderPath+2)).."\n\n")
+        
+        local head = "# Package: "..formatHeader(outputPath:sub(#docsFolderPath+2))
+        file:write(head.."\n\n")
 
         if parentSummaryPath then
             local backPath = getRelativePath(currentSummaryPath,parentSummaryPath)
             file:write("back to **["..getFileNameNoExtension(fs.getName(parentSummaryPath)).."]("..backPath..")**\n")
         end
 
-        --TODO: maybe add custom formatting strings to this as well
         if #summaryOutputPaths > 0 then
             file:write("## Sub-Packages:\n")
             local displayPath
@@ -934,7 +952,10 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
                         genSettings.formatting.indices.packages,
                         {
                             label = displayPath,
-                            file = summaryOutputPaths[i]..".md"
+                            file = summaryOutputPaths[i]..".md",
+                            folderName = folderName,
+                            head = head,
+                            path = currentSummaryPath,
                         }
                     )
                     ,"<br>\n"
@@ -955,7 +976,10 @@ local function useDocTree(docBranch, folderName, skips, layer, outputPath, index
                         genSettings.formatting.indices.files,
                         {
                             label = docBranch.files[i].path,
-                            file = path..".md"
+                            file = path..".md",
+                            folderName = folderName,
+                            head = head,
+                            path = currentSummaryPath,
                         }
                     )
                     ,"<br>\n"
