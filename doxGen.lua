@@ -459,11 +459,21 @@ for name,injection in pairs(injections) do
     end
 end
 
+local function getMethodNameNoParams(line)
+    return line:match("function%s+([%w_%.:]+)%s*%(")
+end
+
+local function getDocLinkName(name)
+    return name:gsub("[(),:.]", ""):lower()
+end
+
 local methodsTokenized = 0
 local function tokenizeFile(filePath)
     log("tokenizing: "..filePath)
 
     local docTokens = {}
+    docTokens.methodToDocMap = {}
+
     local methodTbl = resetMethodTbl();
 
     for line in io.lines(filePath) do
@@ -503,6 +513,7 @@ local function tokenizeFile(filePath)
                     log("    tokenized method "..name)
 
                     docTokens[#docTokens+1] = methodTbl
+                    docTokens.methodToDocMap[getMethodNameNoParams(line)] = "#"..getDocLinkName(name)
                     methodsTokenized = methodsTokenized + 1
 
                     --reset method tracking
@@ -674,22 +685,27 @@ serializers[#serializers+1]={
 }
 serializers[#serializers+1]={
     index = "seeAlso",
-    func = function(file, method, name, head, outputPath)
+    func = function(file, method, name, head, outputPath, methodToDocMap)
         file:write("### See Also:\n")
-        local seeAlso
+        local seeAlso, values
         for j=1,#method.seeAlso do
             seeAlso = method.seeAlso[j]
+
+            values = {
+                label = seeAlso.label,
+                desc = seeAlso.desc,
+                fileName = name,
+                head = head,
+                path = outputPath
+            }
+            if seeAlso.file:sub(1,1) == "#" and methodToDocMap[seeAlso.file:sub(2)] then values.file = methodToDocMap[seeAlso.file:sub(2)]
+            else values.file = seeAlso.file
+            end
+
             file:write(
                 formatString(
                     genSettings.formatting.documents.seeAlso,
-                    {
-                        label = seeAlso.label,
-                        file = seeAlso.file,
-                        desc = seeAlso.desc,
-                        fileName = name,
-                        head = head,
-                        path = outputPath
-                    }
+                    values
                 )
                 ,"<br>\n"
             )
@@ -728,7 +744,7 @@ local function generateDocs(docTokens, name, head, backPath, parentOutputPath)
 
             if type(method[serializer.index]) == "table" then
                 if #method[serializer.index] > 0 then
-                    serializer.func(file, method, name, head, outputPath)
+                    serializer.func(file, method, name, head, outputPath, docTokens.methodToDocMap)
                     file:write("\n")
                 end
             else
